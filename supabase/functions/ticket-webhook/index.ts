@@ -12,11 +12,11 @@ serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return jsonResponse({ error: "Method not allowed" }, 405);
 
-  const webhookSecret = Deno.env.get("STRIPE_WEBHOOK_SECRET");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SB_SERVICE_ROLE_KEY");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL");
+  const webhookSecret = Deno.env.get("TIXWAVE_WEBHOOK_SECRET") || Deno.env.get("STRIPE_WEBHOOK_SECRET");
+  const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://nmusxculduptvefgqfjn.supabase.co";
 
-  if (!webhookSecret) return jsonResponse({ error: "Missing STRIPE_WEBHOOK_SECRET secret" }, 500);
+  if (!webhookSecret) return jsonResponse({ error: "Missing TIXWAVE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET secret" }, 500);
   if (!serviceRoleKey || !supabaseUrl) return jsonResponse({ error: "Missing Supabase service configuration" }, 500);
 
   const signature = req.headers.get("stripe-signature");
@@ -33,7 +33,15 @@ serve(async (req: Request) => {
     return jsonResponse({ error: "Invalid Stripe payload" }, 400);
   }
 
-  const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        apikey: serviceRoleKey,
+      },
+    },
+  });
 
   try {
     if (event.type === "checkout.session.completed") {

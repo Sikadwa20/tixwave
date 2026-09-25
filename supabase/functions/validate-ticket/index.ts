@@ -14,14 +14,22 @@ serve(async (req: Request) => {
   try {
     const { ticket_id, pin } = await req.json();
     const scannerPin = Deno.env.get("SCANNER_PIN");
-    const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SB_SERVICE_ROLE_KEY");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL");
+    const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://nmusxculduptvefgqfjn.supabase.co";
 
     if (scannerPin && String(pin || "") !== scannerPin) return jsonResponse({ valid: false, error: "Invalid scanner PIN" }, 401);
     if (!serviceRoleKey || !supabaseUrl) return jsonResponse({ valid: false, error: "Missing Supabase service configuration" }, 500);
     if (!ticket_id) return jsonResponse({ valid: false, error: "Missing ticket_id" }, 400);
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const supabase = createClient(supabaseUrl, serviceRoleKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: {
+        headers: {
+          Authorization: `Bearer ${serviceRoleKey}`,
+          apikey: serviceRoleKey,
+        },
+      },
+    });
     const { data: ticket, error } = await supabase
       .from("tickets")
       .select("id,ticket_ref,buyer_email,used,used_at,events(name,date,venue,city,country),ticket_types(name)")
@@ -43,13 +51,27 @@ serve(async (req: Request) => {
       });
     }
 
-    const { error: updateError } = await supabase
+    const scanTime = new Date().toISOString();
+    const { data: updatedTicket, error: updateError } = await supabase
       .from("tickets")
-      .update({ used: true, used_at: new Date().toISOString() })
+      .update({ used: true, used_at: scanTime })
       .eq("id", ticket_id)
-      .eq("used", false);
+      .eq("used", false)
+      .select("id")
+      .maybeSingle();
 
     if (updateError) throw new Error(updateError.message);
+    if (!updatedTicket) {
+      return jsonResponse({
+        valid: false,
+        already_used: true,
+        ticket_ref: ticket.ticket_ref,
+        event_name: ticket.events?.name,
+        ticket_type: ticket.ticket_types?.name,
+        buyer_email: ticket.buyer_email,
+        used_at: ticket.used_at,
+      });
+    }
 
     return jsonResponse({
       valid: true,
@@ -58,6 +80,7 @@ serve(async (req: Request) => {
       event_name: ticket.events?.name,
       ticket_type: ticket.ticket_types?.name,
       buyer_email: ticket.buyer_email,
+      used_at: scanTime,
     });
   } catch (error) {
     console.error("validate-ticket error", error);
