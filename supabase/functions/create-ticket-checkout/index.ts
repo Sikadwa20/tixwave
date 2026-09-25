@@ -24,8 +24,7 @@ serve(async (req: Request) => {
     } = body;
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const requestUrl = new URL(req.url);
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || `${requestUrl.protocol}//${requestUrl.host}`;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://nmusxculduptvefgqfjn.supabase.co";
     const siteUrl = Deno.env.get("TIXWAVE_SITE_URL") || req.headers.get("origin") || "https://tixwave.party";
 
     if (!stripeSecretKey) return jsonResponse({ error: "Missing STRIPE_SECRET_KEY secret" }, 500);
@@ -46,7 +45,12 @@ serve(async (req: Request) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey, {
       auth: { persistSession: false, autoRefreshToken: false },
-      global: { headers: { Authorization: `Bearer ${serviceRoleKey}` } },
+      global: {
+        headers: {
+          Authorization: `Bearer ${serviceRoleKey}`,
+          apikey: serviceRoleKey,
+        },
+      },
     });
 
     let ticketQuery = supabase
