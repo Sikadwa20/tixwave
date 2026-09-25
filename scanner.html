@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Door Scanner — TixWave.party</title>
+  <meta name="description" content="TixWave.party mobile QR scanner for nightclub and live event door staff.">
+  <meta property="og:url" content="https://tixwave.party/scanner.html">
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#0a0a0a;--muted:#a9a3b5;--purple:#7c3aed;--gold:#f59e0b;--green:#22c55e;--red:#ef4444;--line:rgba(255,255,255,.12);--glass:rgba(255,255,255,.08)}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 50% 0,rgba(124,58,237,.28),transparent 30%),var(--bg);color:#fff;font-family:Outfit,system-ui,sans-serif}.wrap{width:min(760px,94vw);margin:auto;padding:22px 0}.logo{font-size:24px;font-weight:900}.logo span{color:var(--gold)}h1{font-size:clamp(36px,9vw,70px);line-height:.9;letter-spacing:-.06em;margin:30px 0 12px}.panel{background:linear-gradient(180deg,rgba(255,255,255,.10),rgba(255,255,255,.04));border:1px solid var(--line);border-radius:28px;padding:18px;margin:16px 0}input{width:100%;border:1px solid var(--line);border-radius:16px;background:var(--glass);color:white;padding:14px;font:inherit;margin:8px 0}.btn{width:100%;border:0;border-radius:18px;padding:16px;font-weight:900;color:#fff;background:linear-gradient(135deg,var(--purple),#c026d3)}#reader{overflow:hidden;border-radius:20px;background:#111}.result{display:none;border-radius:28px;padding:28px;text-align:center;font-size:24px;font-weight:900}.valid{display:block;background:rgba(34,197,94,.16);border:2px solid rgba(34,197,94,.55);color:#86efac}.invalid{display:block;background:rgba(239,68,68,.16);border:2px solid rgba(239,68,68,.55);color:#fca5a5}.muted{color:var(--muted)}.small{font-size:14px;color:var(--muted)}
+  </style>
+</head>
+<body><main class="wrap"><div class="logo">Tix<span>Wave</span>.party</div><h1>Door QR scanner</h1><p class="muted">Scan each attendee's QR ticket. A valid scan marks the ticket as used immediately.</p><div class="panel"><input id="pin" type="password" placeholder="Scanner PIN"><button class="btn" id="startBtn">Start camera scanner</button><p class="small">Set the same PIN in Supabase secret <b>SCANNER_PIN</b>. If the secret is empty, the function accepts scans without a PIN.</p></div><div class="panel"><div id="reader"></div></div><div id="result" class="result"></div></main>
+<script>
+const SUPABASE_URL='https://nmusxculduptvefgqfjn.supabase.co';const endpoint=`${SUPABASE_URL}/functions/v1/validate-ticket`;let scanner=null;let busy=false;
+function show(valid,html){result.className='result '+(valid?'valid':'invalid');result.innerHTML=html;}
+async function validate(ticketId){if(busy)return;busy=true;show(false,'Checking ticket...');try{const res=await fetch(endpoint,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ticket_id:ticketId,pin:pin.value})});const data=await res.json();if(data.valid){show(true,`✅ VALID<br><span class="small">${data.event_name||''}<br>${data.ticket_type||''} • ${data.ticket_ref||ticketId}<br>${data.buyer_email||''}</span>`);}else{show(false,`❌ ${data.already_used?'ALREADY USED':'INVALID'}<br><span class="small">${data.error||data.ticket_ref||ticketId}${data.used_at?'<br>Used at '+new Date(data.used_at).toLocaleString():''}</span>`);}setTimeout(()=>{busy=false;},1800);}catch(error){console.error(error);show(false,'❌ NETWORK ERROR');setTimeout(()=>{busy=false;},1800);}}
+startBtn.onclick=async()=>{if(scanner)return;scanner=new Html5QrcodeScanner('reader',{fps:10,qrbox:{width:250,height:250},rememberLastUsedCamera:true},false);scanner.render(validate,(error)=>console.debug(error));startBtn.textContent='Scanner running';startBtn.disabled=true;};
+</script></body></html>
