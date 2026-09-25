@@ -15,24 +15,29 @@ serve(async (req: Request) => {
     const { event_id, ticket_type_id, quantity, buyer_email } = await req.json();
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || Deno.env.get("SB_SERVICE_ROLE_KEY");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL");
+    const requestApiKey = req.headers.get("apikey") || req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
+    const requestUrl = new URL(req.url);
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || `${requestUrl.protocol}//${requestUrl.host}`;
     const siteUrl = Deno.env.get("TIXWAVE_SITE_URL") || req.headers.get("origin") || "https://tixwave.party";
 
     if (!stripeSecretKey) return jsonResponse({ error: "Missing STRIPE_SECRET_KEY secret" }, 500);
-    if (!serviceRoleKey || !supabaseUrl) return jsonResponse({ error: "Missing Supabase service configuration" }, 500);
+    const apiKey = requestApiKey || serviceRoleKey;
+    if (!apiKey) return jsonResponse({ error: "Missing Supabase service configuration" }, 500);
 
+    const cleanEventId = String(event_id || "").trim();
+    const cleanTicketTypeId = String(ticket_type_id || "").trim();
     const cleanEmail = String(buyer_email || "").trim().toLowerCase();
     const ticketQuantity = Number(quantity || 1);
-    if (!event_id || !ticket_type_id || !cleanEmail.includes("@")) return jsonResponse({ error: "Missing event, ticket type, or buyer email" }, 400);
+    if (!cleanEventId || !cleanTicketTypeId || !cleanEmail.includes("@")) return jsonResponse({ error: "Missing event, ticket type, or buyer email" }, 400);
     if (!Number.isInteger(ticketQuantity) || ticketQuantity < 1 || ticketQuantity > 10) return jsonResponse({ error: "Quantity must be between 1 and 10" }, 400);
 
-    const supabase = createClient(supabaseUrl, serviceRoleKey, { auth: { persistSession: false, autoRefreshToken: false } });
+    const supabase = createClient(supabaseUrl, apiKey, { auth: { persistSession: false, autoRefreshToken: false } });
 
     const { data: ticketType, error: ticketError } = await supabase
       .from("ticket_types")
       .select("id,name,price,quantity,sold,event_id,events(name,date,venue,city,country)")
-      .eq("id", ticket_type_id)
-      .eq("event_id", event_id)
+      .eq("id", cleanTicketTypeId)
+      .eq("event_id", cleanEventId)
       .single();
 
     if (ticketError || !ticketType) return jsonResponse({ error: "Ticket type not found" }, 404);
@@ -42,8 +47,8 @@ serve(async (req: Request) => {
     const amountPaid = Number(ticketType.price) * ticketQuantity;
     const { data: order, error: orderError } = await supabase.from("orders").insert({
       buyer_email: cleanEmail,
-      event_id,
-      ticket_type_id,
+      event_id: cleanEventId,
+      ticket_type_id: cleanTicketTypeId,
       quantity: ticketQuantity,
       amount_paid: amountPaid,
       commission: roundMoney(amountPaid * 0.05),
@@ -54,7 +59,7 @@ serve(async (req: Request) => {
 
     const eventName = ticketType.events?.name || "TixWave.party event";
     const successUrl = `${siteUrl.replace(/\/$/, "")}/checkout-success.html?order_id=${order.id}&token=${order.public_order_token}&session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${siteUrl.replace(/\/$/, "")}/event.html?id=${event_id}`;
+    const cancelUrl = `${siteUrl.replace(/\/$/, "")}/event.html?id=${cleanEventId}`;
 
     const stripeResponse = await fetch("https://api.stripe.com/v1/checkout/sessions", {
       method: "POST",
@@ -73,8 +78,8 @@ serve(async (req: Request) => {
         "line_items[0][price_data][product_data][name]": `${eventName} — ${ticketType.name}`,
         "metadata[order_id]": order.id,
         "metadata[order_token]": order.public_order_token,
-        "metadata[event_id]": event_id,
-        "metadata[ticket_type_id]": ticket_type_id,
+        "metadata[event_id]": cleanEventId,
+        "metadata[ticket_type_id]": cleanTicketTypeId,
         "metadata[quantity]": String(ticketQuantity),
         "metadata[buyer_email]": cleanEmail,
       }),
