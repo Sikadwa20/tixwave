@@ -21,7 +21,7 @@ serve(async (req: Request) => {
     const siteUrl = Deno.env.get("TIXWAVE_SITE_URL") || req.headers.get("origin") || "https://tixwave.party";
 
     if (!stripeSecretKey) return jsonResponse({ error: "Missing STRIPE_SECRET_KEY secret" }, 500);
-    const apiKey = requestApiKey || serviceRoleKey;
+    const apiKey = serviceRoleKey || requestApiKey;
     if (!apiKey) return jsonResponse({ error: "Missing Supabase service configuration" }, 500);
 
     const cleanEventId = String(event_id || "").trim();
