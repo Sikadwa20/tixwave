@@ -5,6 +5,7 @@
   <title>Ticket Confirmed — TixWave.party</title>
   <meta name="description" content="Your TixWave.party QR ticket confirmation.">
   <meta property="og:url" content="https://tixwave.party/checkout-success.html">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎟️</text></svg>">
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800;900&display=swap" rel="stylesheet">
@@ -21,6 +22,5 @@ function renderNavAuth(session){navAuth.innerHTML=session?`<span class="user-chi
 function fmt(v){return new Date(v+'T00:00:00').toLocaleDateString(undefined,{weekday:'long',month:'long',day:'numeric',year:'numeric'});}function makeCard(ticket){return `<article class="ticket"><div><div class="meta">${ticket.ticket_types?.name||'Ticket'} • ${ticket.ticket_ref}</div><h3>${ticket.events?.name||'TixWave.party Event'}</h3><p>${fmt(ticket.events?.date)}<br>${ticket.events?.venue||''} ${ticket.events?.city?`• ${ticket.events.city}`:''}</p><p class="gold">QR encodes ticket UUID for door scan.</p></div><div class="qr" id="qr-${ticket.id}"></div></article>`;}
 async function hydrateAccountPrompt(){if(!orderId||!token)return;const {data,error}=await db.from('orders').select('buyer_email').eq('id',orderId).maybeSingle();if(error||!data?.buyer_email)return;const checkoutEmail=data.buyer_email.toLowerCase();const target=`my-tickets.html?email=${encodeURIComponent(checkoutEmail)}`;viewTicketsBtn.href=target;signupLink.href=`signup.html?email=${encodeURIComponent(checkoutEmail)}`;accountLink.href=`login.html?email=${encodeURIComponent(checkoutEmail)}`;accountMessage.innerHTML=`Create an account — or log in — with <span class="gold">${checkoutEmail}</span>, the same email you used at checkout, so you can open <span class="gold">My Tickets</span> anytime.`;}
 async function loadTickets(attempt=1){if(!orderId||!token){status.textContent='Missing order token. Open this page from your Stripe success redirect.';accountPrompt.classList.add('hidden');return;}const {data,error}=await db.from('tickets').select('id,ticket_ref,used,events(name,date,venue,city,country),ticket_types(name)').eq('order_id',orderId);if(error){console.error(error);status.textContent='Could not load tickets yet. Check RLS policies and webhook setup.';return;}if(!data||data.length===0){status.textContent=attempt<8?'Waiting for Stripe webhook to issue tickets...':'No tickets found yet. If payment succeeded, check the ticket-webhook logs.';if(attempt<8)setTimeout(()=>loadTickets(attempt+1),2000);return;}status.style.display='none';tickets.innerHTML=data.map(makeCard).join('');data.forEach(t=>new QRCode(document.getElementById('qr-'+t.id),{text:t.id,width:126,height:126,correctLevel:QRCode.CorrectLevel.H}));}
-hydrateAccountPrompt();
-loadTickets();
+hydrateAccountPrompt();loadTickets();
 </script></body></html>
