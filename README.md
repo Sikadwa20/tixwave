@@ -45,7 +45,9 @@ supabase functions deploy ticket-webhook --no-verify-jwt
 supabase functions deploy validate-ticket --no-verify-jwt
 ```
 
-Set these Supabase secrets:
+The repo now includes `supabase/config.toml` with `verify_jwt = false` for `ticket-webhook` and `validate-ticket` so redeploys keep the webhook publicly reachable for Stripe and the scanner flow.
+
+Set these **Supabase Edge Function** secrets:
 
 ```bash
 supabase secrets set STRIPE_SECRET_KEY=sk_live_or_test_xxx
@@ -54,11 +56,13 @@ supabase secrets set TIXWAVE_SITE_URL=https://tixwave.party
 supabase secrets set SCANNER_PIN=2468
 ```
 
+`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` must be stored in **Supabase**, not just Cloudflare Pages, because checkout creation and webhook verification run inside Supabase Edge Functions.
+
 `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are normally available automatically in Supabase Edge Functions. If your project does not inject them, add them as secrets too.
 
 ## 3. Stripe webhook setup
 
-In Stripe Dashboard → Developers → Webhooks, add this endpoint:
+In Stripe Dashboard → Developers → Webhooks, add this **live-mode** endpoint:
 
 ```text
 https://nmusxculduptvefgqfjn.supabase.co/functions/v1/ticket-webhook

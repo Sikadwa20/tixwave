@@ -1,0 +1,7 @@
+project_id = "nmusxculduptvefgqfjn"
+
+[functions.ticket-webhook]
+verify_jwt = false
+
+[functions.validate-ticket]
+verify_jwt = false
