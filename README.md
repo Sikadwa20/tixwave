@@ -78,11 +78,12 @@ Copy the webhook signing secret into Supabase as `STRIPE_WEBHOOK_SECRET`.
 
 ## 4. Supabase Auth setup
 
-For magic-link login on `my-tickets.html`, add these redirect URLs in Supabase Auth URL configuration:
+For auth and password recovery, set **Site URL** to `https://tixwave.party` and add these redirect URLs in Supabase Auth URL configuration:
 
 ```text
-https://tixwave.party/my-tickets.html
 https://tixwave.party/
+https://tixwave.party/my-tickets.html
+https://tixwave.party/reset-password.html
 ```
 
 ## 5. Domain deployment
@@ -94,6 +95,7 @@ https://tixwave.party/index.html
 https://tixwave.party/event.html?id=EVENT_ID
 https://tixwave.party/checkout-success.html
 https://tixwave.party/my-tickets.html
+https://tixwave.party/reset-password.html
 https://tixwave.party/scanner.html
 https://tixwave.party/admin.html
 ```
