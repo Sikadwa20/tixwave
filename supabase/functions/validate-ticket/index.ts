@@ -15,7 +15,7 @@ serve(async (req: Request) => {
     const { ticket_id, pin } = await req.json();
     const scannerPin = Deno.env.get("SCANNER_PIN");
     const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://nmusxculduptvefgqfjn.supabase.co";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://lantiwcpwkfjmqjgvhbg.supabase.co";
 
     if (scannerPin && String(pin || "") !== scannerPin) return jsonResponse({ valid: false, error: "Invalid scanner PIN" }, 401);
     if (!serviceRoleKey || !supabaseUrl) return jsonResponse({ valid: false, error: "Missing Supabase service configuration" }, 500);

@@ -14,7 +14,7 @@ serve(async (req: Request) => {
 
   const webhookSecret = Deno.env.get("TIXWAVE_WEBHOOK_SECRET") || Deno.env.get("STRIPE_WEBHOOK_SECRET");
   const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-  const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://nmusxculduptvefgqfjn.supabase.co";
+  const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://lantiwcpwkfjmqjgvhbg.supabase.co";
 
   if (!webhookSecret) return jsonResponse({ error: "Missing TIXWAVE_WEBHOOK_SECRET or STRIPE_WEBHOOK_SECRET secret" }, 500);
   if (!serviceRoleKey || !supabaseUrl) return jsonResponse({ error: "Missing Supabase service configuration" }, 500);
@@ -29,7 +29,7 @@ serve(async (req: Request) => {
   let event: any;
   try {
     event = JSON.parse(rawBody);
-  } catch (_error) {
+  } catch {
     return jsonResponse({ error: "Invalid Stripe payload" }, 400);
   }
 

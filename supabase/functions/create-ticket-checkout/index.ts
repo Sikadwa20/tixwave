@@ -24,7 +24,7 @@ serve(async (req: Request) => {
     } = body;
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://nmusxculduptvefgqfjn.supabase.co";
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://lantiwcpwkfjmqjgvhbg.supabase.co";
     const siteUrl = Deno.env.get("TIXWAVE_SITE_URL") || req.headers.get("origin") || "https://tixwave.party";
 
     if (!stripeSecretKey) return jsonResponse({ error: "Missing STRIPE_SECRET_KEY secret" }, 500);
@@ -187,7 +187,7 @@ async function parseStripeResponse(response: Response): Promise<any> {
 
   try {
     return JSON.parse(text);
-  } catch (_error) {
+  } catch {
     throw new Error(`Stripe returned a non-JSON response (status ${response.status})`);
   }
 }

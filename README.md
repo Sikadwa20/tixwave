@@ -20,7 +20,7 @@ TixWave.party is a pure HTML/CSS/JS ticket marketplace for nightclub and live ev
 Open the Supabase SQL Editor for project:
 
 ```text
-https://nmusxculduptvefgqfjn.supabase.co
+https://lantiwcpwkfjmqjgvhbg.supabase.co
 ```
 
 Paste and run `supabase-schema.sql`.
@@ -65,7 +65,7 @@ supabase secrets set SCANNER_PIN=2468
 In Stripe Dashboard → Developers → Webhooks, add this **live-mode** endpoint:
 
 ```text
-https://nmusxculduptvefgqfjn.supabase.co/functions/v1/ticket-webhook
+https://lantiwcpwkfjmqjgvhbg.supabase.co/functions/v1/ticket-webhook
 ```
 
 Subscribe to:

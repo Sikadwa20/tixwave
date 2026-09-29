@@ -28,8 +28,8 @@
   </main>
   <footer class="footer"><div class="wrap">© 2026 TixWave.party. Built for global promoters, fans, and fast QR entry.</div></footer>
 <script>
-const SUPABASE_URL='https://nmusxculduptvefgqfjn.supabase.co';
-const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5tdXN4Y3VsZHVwdHZlZmdxZmpuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTAwNjcwNDQsImV4cCI6MjEwNTY0MzA0NH0._Nn3nacYJOg2nLcG_kxNSI3vTWtDHUEEH11Lvsera8s';
+const SUPABASE_URL='https://lantiwcpwkfjmqjgvhbg.supabase.co';
+const SUPABASE_ANON_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxhbnRpd2Nwd2tmam1xamd2aGJnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2ODg5NTcsImV4cCI6MjEwNjI2NDk1N30.nRjyqkPBdXDfitneQpapkqtr66avZyVu8HfCq4pakEs';
 const db=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY);
 function renderNavAuth(session){navAuth.innerHTML=session?`<span class="user-chip">Hi ${session.user.user_metadata?.name||session.user.email}</span><a href="my-tickets.html">My Tickets</a><button class="btn secondary" id="navSignOut">Sign Out</button>`:`<a href="login.html">Sign In</a><a class="btn secondary" href="signup.html">Sign Up</a>`;if(session)navSignOut.onclick=async()=>{await db.auth.signOut();location.reload();};}
 db.auth.getSession().then(({data:{session}})=>renderNavAuth(session));db.auth.onAuthStateChange((_event,session)=>renderNavAuth(session));
