@@ -25,8 +25,10 @@ serve(async (req: Request) => {
     const stripeSecretKey = Deno.env.get("STRIPE_SECRET_KEY");
     const serviceRoleKey = Deno.env.get("SB_SERVICE_ROLE_KEY") || Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || Deno.env.get("SB_PROJECT_URL") || "https://lantiwcpwkfjmqjgvhbg.supabase.co";
-    const siteUrl = Deno.env.get("TIXWAVE_SITE_URL") || req.headers.get("origin") || "https://tixwave.party";
+    const siteUrl = Deno.env.get("TIXWAVE_SITE_URL") || "https://tixwave.party";
 
+    const mode = Deno.env.get("STRIPE_MODE") || "test";
+    if (stripeSecretKey && !stripeSecretKey.startsWith(mode === "live" ? "sk_live_" : "sk_test_")) return jsonResponse({ error: "Stripe key does not match the configured payment mode" }, 503);
     if (!stripeSecretKey) return jsonResponse({ error: "Missing STRIPE_SECRET_KEY secret" }, 500);
     if (!serviceRoleKey) return jsonResponse({ error: "Missing SB_SERVICE_ROLE_KEY secret" }, 500);
     if (!supabaseUrl) return jsonResponse({ error: "Missing SUPABASE_URL secret" }, 500);
@@ -73,25 +75,12 @@ serve(async (req: Request) => {
       throw new Error("Ticket type has an invalid price");
     }
 
-    const remaining = Number(ticketType.quantity) - Number(ticketType.sold || 0);
-    if (remaining < ticketQuantity) return jsonResponse({ error: `Only ${remaining} ticket(s) remaining` }, 409);
+    const { data: reservation, error: orderError } = await supabase.rpc("reserve_ticket_order", {
+      p_ticket_type: cleanTicketTypeId, p_event: resolvedEventId,
+      p_quantity: ticketQuantity, p_email: cleanEmail,
+    });
 
-    const amountPaid = roundMoney(unitPrice * ticketQuantity);
-    const commission = roundMoney(amountPaid * 0.05);
-    const { data: order, error: orderError } = await supabase
-      .from("orders")
-      .insert({
-        buyer_email: cleanEmail,
-        event_id: resolvedEventId,
-        ticket_type_id: cleanTicketTypeId,
-        quantity: ticketQuantity,
-        amount_paid: amountPaid,
-        commission,
-        status: "pending",
-      })
-      .select("id,public_order_token")
-      .single();
-
+    const order = Array.isArray(reservation) ? reservation[0] : reservation;
     if (orderError || !order) {
       throw new Error(`Could not create pending order: ${orderError?.message || "unknown error"}`);
     }
@@ -106,12 +95,21 @@ serve(async (req: Request) => {
     const stripePayload = new URLSearchParams({
       mode: "payment",
       customer_email: cleanEmail,
+      "payment_method_types[0]": "card",
+      expires_at: String(Math.floor(Date.now() / 1000) + 1860),
       success_url: successUrl,
       cancel_url: cancelUrl,
       "line_items[0][quantity]": String(ticketQuantity),
       "line_items[0][price_data][currency]": "eur",
       "line_items[0][price_data][unit_amount]": String(Math.round(unitPrice * 100)),
       "line_items[0][price_data][product_data][name]": `${eventName} — ${ticketType.name}`,
+      "metadata[platform]": "tixwave",
+      "payment_intent_data[metadata][platform]": "tixwave",
+      "payment_intent_data[metadata][event_id]": resolvedEventId,
+      "payment_intent_data[metadata][order_id]": order.id,
+      "payment_intent_data[description]": `Tixwave tickets: ${eventName}`,
+      "payment_intent_data[statement_descriptor_suffix]": "TIXWAVE",
+      "payment_intent_data[transfer_group]": `event_${resolvedEventId}`,
       "metadata[order_id]": order.id,
       "metadata[order_token]": order.public_order_token,
       "metadata[event_id]": resolvedEventId,
@@ -127,11 +125,12 @@ serve(async (req: Request) => {
         headers: {
           Authorization: `Bearer ${stripeSecretKey}`,
           "Content-Type": "application/x-www-form-urlencoded",
+          "Idempotency-Key": `ticket-order-${order.id}`,
         },
         body: stripePayload,
       });
     } catch (error) {
-      await markOrderCancelled(supabase, order.id);
+      // Keep the reservation: Stripe may have received the request despite a network failure.
       throw new Error(`Stripe checkout request failed: ${error instanceof Error ? error.message : String(error)}`);
     }
 
@@ -150,14 +149,18 @@ serve(async (req: Request) => {
       .update({ stripe_session_id: session.id })
       .eq("id", order.id);
     if (updateError) {
-      throw new Error(`Failed to save stripe_session_id: ${updateError.message}`);
+      const expired = await fetch(`https://api.stripe.com/v1/checkout/sessions/${session.id}/expire`, {
+        method: "POST", headers: { Authorization: `Bearer ${stripeSecretKey}` },
+      });
+      if (expired.ok) await markOrderCancelled(supabase, order.id);
+      throw new Error("Could not finish checkout setup. Please try again later.");
     }
 
     return jsonResponse({ url: session.url, order_id: order.id, token: order.public_order_token });
   } catch (error) {
     console.error("create-ticket-checkout error", error);
     return jsonResponse({
-      error: error instanceof Error ? error.message : "Unexpected checkout error",
+      error: "Could not start checkout. Tickets may be unavailable; please try again.",
     }, 500);
   }
 });
