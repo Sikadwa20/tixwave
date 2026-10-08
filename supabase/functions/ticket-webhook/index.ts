@@ -44,73 +44,66 @@ serve(async (req: Request) => {
   });
 
   try {
-    if (event.type === "checkout.session.completed") {
-      await handleCheckoutCompleted(supabase, event.data.object);
+    const session = event.data.object;
+    if (event.type.startsWith("checkout.session.") && session.metadata?.platform !== "tixwave") {
+      // Recover older sessions only when their IDs match a saved Tixwave order.
+      const orderId = getString(session.metadata?.order_id);
+      if (session.metadata?.platform || !orderId) return jsonResponse({ received: true, ignored: true });
+      const legacy = await supabase.from("orders").select("id").eq("id", orderId).eq("stripe_session_id", session.id).maybeSingle();
+      if (legacy.error) throw legacy.error;
+      if (!legacy.data) return jsonResponse({ received: true, ignored: true });
+    }
+    if (["checkout.session.completed", "checkout.session.async_payment_succeeded"].includes(event.type) && session.payment_status === "paid") {
+      await handleCheckoutCompleted(supabase, session);
+      await emailTickets(supabase, session);
+    } else if (["checkout.session.expired", "checkout.session.async_payment_failed"].includes(event.type)) {
+      const { error } = await supabase.rpc("release_ticket_order", { p_order: session.metadata?.order_id, p_session: session.id });
+      if (error) throw error;
+    }
+    if (["charge.refunded", "charge.dispute.created"].includes(event.type)) {
+      const object = event.data.object;
+      const intent = object.payment_intent;
+      if (intent) {
+        const changes = event.type === "charge.refunded" && object.refunded ? { payout_blocked: true, status: "refunded" } : { payout_blocked: true };
+        const saved = await supabase.from("orders").update(changes).eq("payment_intent_id", intent);
+        if (saved.error) throw saved.error;
+      }
     }
     return jsonResponse({ received: true });
   } catch (error) {
     console.error("ticket-webhook handler failed", error);
-    return jsonResponse({ error: "Webhook handling failed", detail: String(error) }, 500);
+    return jsonResponse({ error: "Webhook handling failed", detail: "Please retry this webhook" }, 500);
   }
 });
 
 async function handleCheckoutCompleted(supabase: any, session: any): Promise<void> {
-  const metadata = session.metadata || {};
-  const orderId = getString(metadata.order_id);
-  const eventId = getString(metadata.event_id);
-  const ticketTypeId = getString(metadata.ticket_type_id);
-  const buyerEmail = (getString(metadata.buyer_email) || getString(session.customer_details?.email) || getString(session.customer_email) || "").toLowerCase();
-  const quantity = Number(metadata.quantity || 1);
-  const amountPaid = Number(session.amount_total || 0) / 100;
-
-  if (!orderId || !eventId || !ticketTypeId || !buyerEmail || !Number.isInteger(quantity) || quantity < 1) {
-    throw new Error("checkout.session.completed is missing required ticket metadata");
-  }
-
-  const { data: existingOrder, error: existingError } = await supabase
-    .from("orders")
-    .select("id,status")
-    .eq("id", orderId)
-    .maybeSingle();
-
-  if (existingError) throw new Error(existingError.message);
-  if (existingOrder?.status === "paid") return;
-
-  const { error: orderError } = await supabase.from("orders").update({
-    buyer_email: buyerEmail,
-    event_id: eventId,
-    ticket_type_id: ticketTypeId,
-    quantity,
-    amount_paid: amountPaid,
-    commission: roundMoney(amountPaid * 0.05),
-    stripe_session_id: session.id,
-    status: "paid",
-  }).eq("id", orderId);
-
-  if (orderError) throw new Error(`Order update failed: ${orderError.message}`);
-
-  const tickets = Array.from({ length: quantity }, () => ({
-    order_id: orderId,
-    event_id: eventId,
-    ticket_type_id: ticketTypeId,
-    buyer_email: buyerEmail,
-    ticket_ref: createTicketReference(),
-  }));
-
-  const { error: ticketError } = await supabase.from("tickets").insert(tickets);
-  if (ticketError) throw new Error(`Ticket creation failed: ${ticketError.message}`);
-
-  const { error: soldError } = await supabase.rpc("increment_ticket_type_sold", {
-    ticket_type_uuid: ticketTypeId,
-    increment_by: quantity,
+  const orderId = getString(session.metadata?.order_id);
+  if (!orderId) throw new Error("Missing order metadata");
+  const { error } = await supabase.rpc("fulfill_ticket_order", {
+    p_order: orderId, p_session: session.id, p_amount_cents: session.amount_total,
+    p_currency: session.currency, p_payment_intent: session.payment_intent || null,
   });
-  if (soldError) throw new Error(`Sold count update failed: ${soldError.message}`);
+  if (error) throw new Error(error.message);
 }
 
-function createTicketReference(): string {
-  const year = new Date().getUTCFullYear();
-  const random = crypto.randomUUID().replace(/-/g, "").slice(0, 8).toUpperCase();
-  return `TKT-${year}-${random}`;
+async function emailTickets(supabase: any, session: any): Promise<void> {
+  const key = Deno.env.get("RESEND_API_KEY");
+  const sender = Deno.env.get("TIXWAVE_EMAIL_FROM");
+  if (!key || !sender) throw new Error("Ticket email delivery is not configured");
+  const { data: order, error } = await supabase.from("orders")
+    .select("id,buyer_email,public_order_token,email_sent_at,status,events(name)")
+    .eq("id", session.metadata.order_id).single();
+  if (error) throw error;
+  if (order.email_sent_at || order.status !== "paid") return;
+  const site = Deno.env.get("TIXWAVE_SITE_URL") || "https://tixwave.party";
+  const link = `${site}/checkout-success.html?order_id=${order.id}&token=${order.public_order_token}`;
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `tickets-${order.id}` },
+    body: JSON.stringify({ from: sender, to: [order.buyer_email], subject: "Your TixWave tickets", text: `Your tickets for ${order.events?.name || "your event"} are ready. Open your QR tickets: ${link}\nKeep this private link safe. Show each QR ticket at the door.` }),
+  });
+  if (!response.ok) throw new Error("Ticket email delivery failed");
+  const saved = await supabase.from("orders").update({ email_sent_at: new Date().toISOString() }).eq("id", order.id);
+  if (saved.error) throw saved.error;
 }
 
 function roundMoney(value: number): number {
