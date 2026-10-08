@@ -1,0 +1,10 @@
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+/admin.html
+  X-Robots-Tag: noindex
+/scanner.html
+  X-Robots-Tag: noindex
+/checkout-success.html
+  X-Robots-Tag: noindex

@@ -1,108 +1,41 @@
-# TixWave.party setup
+# Tixwave — testing preview
 
-TixWave.party is a pure HTML/CSS/JS ticket marketplace for nightclub and live events. It uses Supabase for Auth, database storage, and Edge Functions, plus Stripe Checkout for payments.
+Static Cloudflare Pages site with Supabase Auth/database/Edge Functions and Stripe Checkout. Keep Stripe in test mode until the full flow has been verified. The public site labels itself as a testing preview.
 
-## Files
+## Production database
 
-- `index.html` — homepage, search, country filters, featured events from Supabase
-- `event.html` — event details and ticket purchase flow
-- `checkout-success.html` — post-payment ticket display with QR codes
-- `my-tickets.html` — buyer login and ticket wallet
-- `scanner.html` — mobile door scanner using device camera
-- `admin.html` — simple PIN-protected event/order/commission admin panel
-- `supabase-schema.sql` — database tables, indexes, policies, helper function, and seed demo events
-- `supabase/functions/create-ticket-checkout/index.ts` — creates Stripe Checkout sessions
-- `supabase/functions/ticket-webhook/index.ts` — handles `checkout.session.completed`, creates tickets, updates sales counts
-- `supabase/functions/validate-ticket/index.ts` — validates and marks QR tickets as used
+Apply `supabase/migrations/20261008_ticket_safety.sql` **once** to the existing project, not the original prototype schema. The original `supabase-schema.sql` is historical and contains unsafe prototype permissions; never run it on production. The migration preserves events and tickets, removes public admin access, and assigns the confirmed `sikadwaquophi20@gmail.com` user as administrator. Signup metadata never grants administrator access.
 
-## 1. Run the database SQL
+## Payment functions
 
-Open the Supabase SQL Editor for project:
+Deploy `create-ticket-checkout`, `ticket-webhook`, `validate-ticket`, `promoter-connect`, and `release-promoter-funds`. JWT verification is handled by Supabase for user endpoints and additionally verified in each function. Webhooks verify Stripe signatures. Scanner requests require authorised event staff or an administrator, and a specific event ID.
 
-```text
-https://lantiwcpwkfjmqjgvhbg.supabase.co
-```
+Supabase secrets required:
 
-Paste and run `supabase-schema.sql`.
+- `STRIPE_SECRET_KEY`: the shared account's **test** key during testing.
+- `STRIPE_MODE`: `test` by default. Change to `live` only with a live key at launch.
+- `STRIPE_WEBHOOK_SECRET`: signing secret for the matching test/live Tixwave endpoint.
+- `TIXWAVE_SITE_URL`: `https://tixwave.party`.
+- `RESEND_API_KEY` and `TIXWAVE_EMAIL_FROM`: email key and a sender on a verified domain.
 
-The schema includes a `public_order_token` on `orders` so the checkout success page can display tickets immediately after Stripe redirects the buyer, without requiring login.
+Never commit secret values. Browser key fields must be entered by the account owner.
 
-## 2. Deploy Edge Functions
+Stripe webhook endpoint: `https://lantiwcpwkfjmqjgvhbg.supabase.co/functions/v1/ticket-webhook`. Subscribe to `checkout.session.completed`, `checkout.session.expired`, `checkout.session.async_payment_succeeded`, `checkout.session.async_payment_failed`, `charge.refunded`, and `charge.dispute.created`. Checkout events with no `platform=tixwave` metadata are ignored so Afro-Mkt transactions do not create Tixwave orders. Tixwave Checkout and PaymentIntent records carry platform, event and order metadata; transfers also carry Tixwave metadata.
 
-Create these Supabase Edge Functions and paste each `index.ts` file into its matching folder/name:
+## Promoters and funds
 
-```text
-create-ticket-checkout
-ticket-webhook
-validate-ticket
-```
+`promoter.html` accepts authenticated event submissions and sends promoters to Stripe Express onboarding. Administrator approves submissions from `admin.html`. Tixwave keeps 5% of gross paid ticket revenue; Stripe processing fees currently debit the platform account. The remainder is released by an administrator only after the recorded event end time and confirmation that the event finished. Promoter verification must be complete. Refunded/disputed orders are blocked; an ambiguous or in-progress transfer is paused for reconciliation rather than blindly retried. Stripe transfer does not guarantee immediate bank payout.
 
-Recommended Supabase CLI commands if you are deploying locally:
+Delaying transfers does **not** remove platform chargeback liability. The shared Stripe balance may be debited for refunds/disputes. Review transfer status, payment disputes and refunds in Stripe before releasing funds. Stripe's funds-holding/cross-border eligibility rules still apply. No real transfer has been executed during development.
 
-```bash
-supabase functions deploy create-ticket-checkout
-supabase functions deploy ticket-webhook --no-verify-jwt
-supabase functions deploy validate-ticket --no-verify-jwt
-```
+## Reservations and fulfilment
 
-The repo now includes `supabase/config.toml` with `verify_jwt = false` for `ticket-webhook` and `validate-ticket` so redeploys keep the webhook publicly reachable for Stripe and the scanner flow.
+Stock is reserved under a database lock before Checkout is created. A reservation is released only after Stripe confirms session expiration/failure. Confirmed paid orders, tickets and sold inventory are updated in one transaction. Retries do not duplicate tickets. Ticket emails use an idempotency key. Network-ambiguous Checkout creation and transfer requests retain their reservation/claim for administrator reconciliation. Alert on pending orders with expired sessions and failed webhook deliveries; expire confirmed-open orphan sessions in Stripe before cancelling their reservations.
 
-Set these **Supabase Edge Function** secrets:
+Door staff accounts are assigned in `event_staff` by an administrator; staff cannot admit another event's tickets. Do not share administrator credentials. The former scanner PIN is no longer used.
 
-```bash
-supabase secrets set STRIPE_SECRET_KEY=sk_live_or_test_xxx
-supabase secrets set STRIPE_WEBHOOK_SECRET=whsec_xxx
-supabase secrets set TIXWAVE_SITE_URL=https://tixwave.party
-supabase secrets set SCANNER_PIN=2468
-```
+## Hosting and checks
 
-`STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` must be stored in **Supabase**, not just Cloudflare Pages, because checkout creation and webhook verification run inside Supabase Edge Functions.
+Build: `node scripts/build.mjs`; output: `dist`. Only public HTML/assets/headers are copied. Do not publish backend source directories as static assets. Auth redirect URLs should include `/my-tickets.html` and `/reset-password.html`.
 
-`SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` are normally available automatically in Supabase Edge Functions. If your project does not inject them, add them as secrets too.
-
-## 3. Stripe webhook setup
-
-In Stripe Dashboard → Developers → Webhooks, add this **live-mode** endpoint:
-
-```text
-https://lantiwcpwkfjmqjgvhbg.supabase.co/functions/v1/ticket-webhook
-```
-
-Subscribe to:
-
-```text
-checkout.session.completed
-```
-
-Copy the webhook signing secret into Supabase as `STRIPE_WEBHOOK_SECRET`.
-
-## 4. Supabase Auth setup
-
-For auth and password recovery, set **Site URL** to `https://tixwave.party` and add these redirect URLs in Supabase Auth URL configuration:
-
-```text
-https://tixwave.party/
-https://tixwave.party/my-tickets.html
-https://tixwave.party/reset-password.html
-```
-
-## 5. Domain deployment
-
-Upload all HTML files in this folder to your static host and point `tixwave.party` to it. Make sure the deployed URLs are:
-
-```text
-https://tixwave.party/index.html
-https://tixwave.party/event.html?id=EVENT_ID
-https://tixwave.party/checkout-success.html
-https://tixwave.party/my-tickets.html
-https://tixwave.party/reset-password.html
-https://tixwave.party/scanner.html
-https://tixwave.party/admin.html
-```
-
-## 6. Important production notes
-
-- Change `ADMIN_PIN` inside `admin.html` before publishing. The current value is `2468` for quick setup.
-- The included admin panel is intentionally simple and client-side PIN protected. For production, move admin operations behind authenticated Supabase users or an admin Edge Function before opening access beyond trusted users.
-- The scanner is protected by `SCANNER_PIN`; keep the scanner URL and PIN private for door staff.
-- The checkout function currently creates Stripe line items dynamically in EUR. If you want country-specific currency later, add a `currency` column to `ticket_types` or `events`.
+Tests: `node --test tests/*.test.mjs` with `@electric-sql/pglite` installed. Tests cover database access, reservations, payment amount checks, duplicate fulfilment, scans, webhook signatures and unpaid/expired sessions. Before launch, run a Stripe **test** purchase, receive the email, display its QR, scan once and confirm a second scan is rejected; test a refund and post-event release using test accounts. Complete legal/operator disclosures and confirm real event details before removing the preview notice. Demo seeds are excluded from the homepage without deleting them.
