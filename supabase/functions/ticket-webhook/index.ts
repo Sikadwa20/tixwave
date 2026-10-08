@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
+import QRCode from "npm:qrcode@1.5.4";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -97,9 +98,21 @@ async function emailTickets(supabase: any, session: any): Promise<void> {
   if (order.email_sent_at || order.status !== "paid") return;
   const site = Deno.env.get("TIXWAVE_SITE_URL") || "https://tixwave.party";
   const link = `${site}/checkout-success.html?order_id=${order.id}&token=${order.public_order_token}`;
+  const tickets = await supabase.from("tickets").select("id,ticket_number,ticket_types(name)").eq("order_id", order.id).order("ticket_number");
+  if (tickets.error) throw tickets.error;
+  if (!tickets.data?.length) throw new Error("No issued tickets to email");
+  const escapeHtml = (value: unknown) => String(value ?? "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]!));
+  const attachments = [];
+  const cards = [];
+  for (const ticket of tickets.data) {
+    const cid = `ticket-${ticket.id}`;
+    const image = await QRCode.toDataURL(ticket.id, { width: 320, margin: 4, errorCorrectionLevel: "M" });
+    attachments.push({ filename: `Tixwave-ticket-${ticket.ticket_number}.png`, content: image.split(",")[1], content_type: "image/png", content_id: cid });
+    cards.push(`<div style="background:#fff;border:1px solid #ddd;border-radius:16px;padding:20px;margin:20px 0;color:#111"><h2>Ticket ${escapeHtml(ticket.ticket_number)} · ${escapeHtml(ticket.ticket_types?.name)}</h2><img src="cid:${cid}" width="280" height="280" alt="QR code for ticket ${escapeHtml(ticket.ticket_number)}" style="display:block;width:280px;max-width:100%;height:auto"><p>Show this QR code at the gate. Each ticket admits one person and can be scanned once.</p></div>`);
+  }
   const response = await fetch("https://api.resend.com/emails", {
-    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `tickets-${order.id}` },
-    body: JSON.stringify({ from: sender, to: [order.buyer_email], subject: "Your TixWave tickets", text: `Your tickets for ${order.events?.name || "your event"} are ready. Open your QR tickets: ${link}\nKeep this private link safe. Show each QR ticket at the door.` }),
+    method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json", "Idempotency-Key": `tickets-qr-v2-${order.id}` },
+    body: JSON.stringify({ from: sender, to: [order.buyer_email], subject: "Your TixWave tickets", attachments, html: `<div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;padding:24px"><h1>TixWave.party</h1><h2>${escapeHtml(order.events?.name || "Your event")}</h2><p>Your tickets are ready. Your QR codes are included below and attached as images.</p>${cards.join("")}<p><a href="${escapeHtml(link)}">View your tickets online</a></p><p>Keep your tickets private. Do not share your QR codes publicly.</p></div>`, text: `Your tickets for ${order.events?.name || "your event"} are ready. Your QR codes are attached as PNG images. Backup ticket link: ${link}\nKeep your QR codes private. Show each ticket at the gate.` }),
   });
   if (!response.ok) throw new Error("Ticket email delivery failed");
   const saved = await supabase.from("orders").update({ email_sent_at: new Date().toISOString() }).eq("id", order.id);
